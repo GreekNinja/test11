@@ -1,0 +1,119 @@
+<!DOCTYPE html>
+<html lang="el">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Live Camera Skeleton Detector (Mobile)</title>
+    <style>
+        body {
+            margin: 0;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            background-color: #111;
+        }
+        canvas, video {
+            position: absolute;
+            top: 0;
+            left: 0;
+        }
+    </style>
+</head>
+<body>
+    <video id="video" width="320" height="240" autoplay muted playsinline></video>
+    <canvas id="canvas" width="320" height="240"></canvas>
+
+    <!-- Φόρτωση του TensorFlow.js και του PoseNet -->
+    <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/posenet"></script>
+
+    <script>
+        const video = document.getElementById('video');
+        const canvas = document.getElementById('canvas');
+        const ctx = canvas.getContext('2d');
+
+        // Φόρτωση του PoseNet
+        async function loadPoseNet() {
+            const net = await posenet.load();
+            return net;
+        }
+
+        // Ρύθμιση κάμερας για κινητά
+        async function setupCamera() {
+            return new Promise((resolve, reject) => {
+                navigator.mediaDevices.getUserMedia({
+                    video: {
+                        facingMode: 'user',  // Χρήση μπροστινής κάμερας
+                        width: 320,
+                        height: 240
+                    }
+                }).then((stream) => {
+                    video.srcObject = stream;
+                    video.onloadedmetadata = () => {
+                        resolve(video);
+                    };
+                }).catch(reject);
+            });
+        }
+
+        // Σχεδίαση σκελετού πάνω στο καμβά
+        function drawSkeleton(keypoints, minConfidence) {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+
+            keypoints.forEach(point => {
+                if (point.score > minConfidence) {
+                    ctx.beginPath();
+                    ctx.arc(point.position.x, point.position.y, 5, 0, 2 * Math.PI);
+                    ctx.fillStyle = 'lime';
+                    ctx.fill();
+                }
+            });
+        }
+
+        // Σχεδίαση γραμμών που συνδέουν τα σημεία κλειδιά
+        function drawLine(ctx, point1, point2) {
+            ctx.beginPath();
+            ctx.moveTo(point1.x, point1.y);
+            ctx.lineTo(point2.x, point2.y);
+            ctx.strokeStyle = 'lime';
+            ctx.lineWidth = 2;
+            ctx.stroke();
+        }
+
+        // Σύνδεση των σημείων κλειδιών
+        function drawConnections(keypoints, minConfidence) {
+            const adjacentKeyPoints = posenet.getAdjacentKeyPoints(keypoints, minConfidence);
+
+            adjacentKeyPoints.forEach((keypointPair) => {
+                drawLine(ctx, keypointPair[0].position, keypointPair[1].position);
+            });
+        }
+
+        // Κύρια λειτουργία ανίχνευσης πόζας
+        async function detectPose(net) {
+            const minConfidence = 0.5;
+            const pose = await net.estimateSinglePose(video, {
+                flipHorizontal: false
+            });
+
+            // Σχεδίαση σκελετού
+            drawSkeleton(pose.keypoints, minConfidence);
+            drawConnections(pose.keypoints, minConfidence);
+
+            requestAnimationFrame(() => detectPose(net));
+        }
+
+        // Εγκατάσταση της κάμερας και του PoseNet
+        async function init() {
+            await setupCamera();
+            const net = await loadPoseNet();
+            detectPose(net);
+        }
+
+        // Εκκίνηση της εφαρμογής
+        init();
+    </script>
+</body>
+</html>
